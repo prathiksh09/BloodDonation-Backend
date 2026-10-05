@@ -1,0 +1,31 @@
+{
+  "name": "project",
+  "version": "1.0.0",
+  "description": "",
+  "main": "Server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node Server.js",
+    "dev": "nodemon Server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cloudinary": "^2.11.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
+    "express-validator": "^7.3.2",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.8.0",
+    "multer": "^2.2.0",
+    "multer-storage-cloudinary": "^4.0.0",
+    "nodemailer": "^10.0.10",
+    "redis": "^6.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
