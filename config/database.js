@@ -1,11 +1,14 @@
 import mongoose from "mongoose";
+import dns from "dns";
 
-export const connectDb = () =>{
-    try {
-    mongoose.connect("mongodb+srv://prathiksh545_db_user:HxYQhbDzDFsmMjPc@cluster0.thbxjl9.mongodb.net/bloodDonation");
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
+
+export const connectDb = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+
     console.log("mongoose db connected");
-} catch(error){
-    console.log("mongoose error");
-
-}
+  } catch (error) {
+    console.log("mongoose error:", error.message);
+  }
 };
