@@ -1,15 +1,14 @@
 import mongoose from "mongoose";
 import serviceModel from "../model/serviceModel.js";
 import donorModel from "../model/donorModel.js";
-import { client } from "../config/redis.js";
-// import { RedisClient } from "redis";
 
+// ==========================================================
 // CREATE BLOOD REQUEST
+// ==========================================================
 
 export const createService = async (req, res) => {
   try {
-    const { donorId, userName, age, location, contact, description } =
-      req.body;
+    const { donorId, userName, age, location, contact, description } = req.body;
 
     // Validate required fields
     if (
@@ -66,40 +65,6 @@ export const createService = async (req, res) => {
       status: "pending",
     });
 
-    // Clear user's cached requests after creating a new request
-    // Redis error should not affect successful MongoDB creation
-    try {
-      const userRedisPattern = `userRequests:${userId}:page:*`;
-
-      const userRedisKeys = await client.keys(userRedisPattern);
-
-      if (userRedisKeys.length > 0) {
-        await client.del(userRedisKeys);
-      }
-    } catch (redisError) {
-      console.error(
-        "Redis cache clear error:",
-        redisError.message
-      );
-    }
-
-    // Clear donor's cached requests after creating a new request
-    // Redis error should not affect successful MongoDB creation
-    try {
-      const donorRedisPattern = `donor:${donor._id}:requests:page:*`;
-
-      const donorRedisKeys = await client.keys(donorRedisPattern);
-
-      if (donorRedisKeys.length > 0) {
-        await client.del(donorRedisKeys);
-      }
-    } catch (redisError) {
-      console.error(
-        "Donor Redis cache clear error:",
-        redisError.message
-      );
-    }
-
     return res.status(201).json({
       success: true,
       message: "Blood request created successfully",
@@ -116,7 +81,9 @@ export const createService = async (req, res) => {
   }
 };
 
-// GET BLOOD REQUESTS FOR LOGGED-IN USER in status page
+// ==========================================================
+// GET BLOOD REQUESTS FOR LOGGED-IN USER
+// ==========================================================
 
 export const getUserRequest = async (req, res) => {
   try {
@@ -134,26 +101,6 @@ export const getUserRequest = async (req, res) => {
     const limit = Math.max(1, parseInt(req.query.limit) || 2);
 
     const skip = (page - 1) * limit;
-
-    // Redis cache key for user requests
-    const redisKey = `userRequests:${userId}:page:${page}:limit:${limit}`;
-
-    // Check Redis cache
-    const cacheRequests = await client.get(redisKey);
-
-    if (cacheRequests) {
-      const cachedData = JSON.parse(cacheRequests);
-
-      return res.status(200).json({
-        success: true,
-        message: "User requests found from redis",
-        data: cachedData.data || [],
-        totalRequests: cachedData.totalRequests || 0,
-        totalPages: cachedData.totalPages || 1,
-        page: cachedData.page || page,
-        limit: cachedData.limit || limit,
-      });
-    }
 
     // Get total number of requests
     const totalRequest = await serviceModel.countDocuments({
@@ -175,22 +122,9 @@ export const getUserRequest = async (req, res) => {
 
     const totalPages = Math.max(1, Math.ceil(totalRequest / limit));
 
-    // Store requests in Redis
-    const redisData = {
-      data: requests,
-      totalRequests: totalRequest,
-      totalPages: totalPages,
-      page: page,
-      limit: limit,
-    };
-
-    await client.set(redisKey, JSON.stringify(redisData), {
-      EX: 60,
-    });
-
     return res.status(200).json({
       success: true,
-      message: "User requests found from Mongo",
+      message: "User requests found",
       data: requests,
       totalRequests: totalRequest,
       totalPages: totalPages,
@@ -208,12 +142,15 @@ export const getUserRequest = async (req, res) => {
   }
 };
 
-// GET BLOOD REQUESTS FOR LOGGED-IN DONOR in donor page
+// ==========================================================
+// GET BLOOD REQUESTS FOR LOGGED-IN DONOR
+// ==========================================================
 
 export const getDonorRequests = async (req, res) => {
   try {
     const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.max(1, Number(req.query.limit) || 10);
+
     const skip = (page - 1) * limit;
 
     // Authenticate donor
@@ -242,20 +179,7 @@ export const getDonorRequests = async (req, res) => {
       });
     }
 
-    // Check Redis cache for donor requests
-    const redisKey = `donor:${donorProfile._id}:requests:page:${page}:limit:${limit}`;
-
-    const cachedData = await client.get(redisKey);
-
-    if (cachedData) {
-      return res.status(200).json({
-        success: true,
-        message: "Donor requests found (from cache)",
-        data: JSON.parse(cachedData),
-      });
-    }
-
-    // Get donor requests from MongoDB
+    // Get donor requests directly from MongoDB
     const requests = await serviceModel
       .find({
         donorId: donorProfile._id,
@@ -267,11 +191,6 @@ export const getDonorRequests = async (req, res) => {
       })
       .skip(skip)
       .limit(limit);
-
-    // Store donor requests in Redis
-    await client.set(redisKey, JSON.stringify(requests), {
-      EX: 60,
-    });
 
     return res.status(200).json({
       success: true,
@@ -289,7 +208,9 @@ export const getDonorRequests = async (req, res) => {
   }
 };
 
+// ==========================================================
 // GET SINGLE BLOOD REQUEST
+// ==========================================================
 
 export const getrequestId = async (req, res) => {
   try {
@@ -331,7 +252,9 @@ export const getrequestId = async (req, res) => {
   }
 };
 
+// ==========================================================
 // ACCEPT / REJECT BLOOD REQUEST
+// ==========================================================
 
 export const updateServiceStatus = async (req, res) => {
   try {
@@ -406,24 +329,6 @@ export const updateServiceStatus = async (req, res) => {
 
     await service.save();
 
-    // Clear donor's Redis cache
-    const redisPattern = `donor:${donorProfile._id}:requests:page:*`;
-
-    const redisKeys = await client.keys(redisPattern);
-
-    if (redisKeys.length > 0) {
-      await client.del(redisKeys);
-    }
-
-    // Clear user's Redis cache so updated status is immediately visible
-    const userRedisPattern = `userRequests:${service.userId}:page:*`;
-
-    const userRedisKeys = await client.keys(userRedisPattern);
-
-    if (userRedisKeys.length > 0) {
-      await client.del(userRedisKeys);
-    }
-
     // Get updated request
     const updatedService = await serviceModel
       .findById(service._id)
@@ -449,7 +354,9 @@ export const updateServiceStatus = async (req, res) => {
   }
 };
 
-// COMPLITED BLOOD REQUEST FROM USER SIDE
+// ==========================================================
+// COMPLETE BLOOD REQUEST FROM USER SIDE
+// ==========================================================
 
 export const completeService = async (req, res) => {
   try {
@@ -483,7 +390,7 @@ export const completeService = async (req, res) => {
       });
     }
 
-    // Ensure the request belongs to the logged-in user
+    // Ensure request belongs to logged-in user
     if (!request.userId || request.userId.toString() !== userId.toString()) {
       return res.status(403).json({
         success: false,
@@ -499,34 +406,10 @@ export const completeService = async (req, res) => {
       });
     }
 
-    // Update request status to completed
+    // Update status to completed
     request.status = "completed";
 
     await request.save();
-
-    // Clear user's Redis cache
-    const userRedisPattern = `userRequests:${userId}:page:*`;
-
-    const userRedisKeys = await client.keys(userRedisPattern);
-
-    if (userRedisKeys.length > 0) {
-      await client.del(userRedisKeys);
-    }
-
-    // Clear donor's request Redis cache
-    const donorRedisPattern = `donor:${request.donorId}:requests:page:*`;
-
-    const donorRedisKeys = await client.keys(donorRedisPattern);
-
-    if (donorRedisKeys.length > 0) {
-      await client.del(donorRedisKeys);
-    }
-
-    // Clear donor's completed donations Redis cache
-    const donorCompletedRedisKey =
-      `donor:${request.donorId}:completed-donations`;
-
-    await client.del(donorCompletedRedisKey);
 
     // Get updated completed request
     const updatedRequest = await serviceModel
@@ -550,7 +433,9 @@ export const completeService = async (req, res) => {
   }
 };
 
-// MY DONATION PAGE
+// ==========================================================
+// MY DONATIONS PAGE
+// ==========================================================
 
 export const getMyDonations = async (req, res) => {
   try {
@@ -579,42 +464,18 @@ export const getMyDonations = async (req, res) => {
       });
     }
 
-    // Redis key for completed donations
-    const redisKey =
-      `donor:${donorProfile._id}:completed-donations`;
-
-    // Check Redis cache
-    const cachedDonations = await client.get(redisKey);
-
-    if (cachedDonations) {
-      return res.status(200).json({
-        success: true,
-        message: "Completed donations found from  Redis",
-        source: "redis",
-        data: JSON.parse(cachedDonations),
-      });
-    }
-
-    console.log(
-      "Redis empty, fetching completed donations from mongoDB"
-    );
-
+    // Get completed donations directly from MongoDB
     const completedDonations = await serviceModel
       .find({
         donorId: donorProfile._id,
         status: "completed",
       })
-      // to display the image in complete section in donor dashboard
+      // Display user image in completed donations
       .populate("userId", "name email image")
-      .populate(
-        "donorId",
-        "donorName bloodGroup contact address image"
-      )
-      .sort({ updatedAt: -1 });
-
-    await client.set(redisKey, JSON.stringify(completedDonations), {
-      EX: 60,
-    });
+      .populate("donorId", "donorName bloodGroup contact address image")
+      .sort({
+        updatedAt: -1,
+      });
 
     return res.status(200).json({
       success: true,
@@ -627,7 +488,7 @@ export const getMyDonations = async (req, res) => {
   } catch (error) {
     console.error("Get my donations Error:", error);
 
-    return res.json({
+    return res.status(500).json({
       success: false,
       message: "Failed to get completed donations",
       error: error.message,
