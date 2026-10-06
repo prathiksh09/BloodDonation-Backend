@@ -66,12 +66,20 @@ export const createService = async (req, res) => {
     });
 
     // Clear user's cached requests after creating a new request
-    const userRedisPattern = `userRequests:${userId}:page:*`;
+    // Redis error should not affect successful MongoDB creation
+    try {
+      const userRedisPattern = `userRequests:${userId}:page:*`;
 
-    const userRedisKeys = await client.keys(userRedisPattern);
+      const userRedisKeys = await client.keys(userRedisPattern);
 
-    if (userRedisKeys.length > 0) {
-      await client.del(userRedisKeys);
+      if (userRedisKeys.length > 0) {
+        await client.del(userRedisKeys);
+      }
+    } catch (redisError) {
+      console.error(
+        "Redis cache clear error:",
+        redisError.message
+      );
     }
 
     return res.status(201).json({
@@ -423,7 +431,7 @@ export const updateServiceStatus = async (req, res) => {
   }
 };
 
-// complited blood request from user side
+// COMPLITED BLOOD REQUEST FROM USER SIDE
 
 export const completeService = async (req, res) => {
   try {
@@ -497,7 +505,8 @@ export const completeService = async (req, res) => {
     }
 
     // Clear donor's completed donations Redis cache
-    const donorCompletedRedisKey = `donor:${request.donorId}:completed-donations`;
+    const donorCompletedRedisKey =
+      `donor:${request.donorId}:completed-donations`;
 
     await client.del(donorCompletedRedisKey);
 
@@ -523,7 +532,7 @@ export const completeService = async (req, res) => {
   }
 };
 
-// myDonation page
+// MY DONATION PAGE
 
 export const getMyDonations = async (req, res) => {
   try {
@@ -531,7 +540,7 @@ export const getMyDonations = async (req, res) => {
       req.donor?._id ||
       req.donor?.id ||
       req.donor?.registerDonorId ||
-      req.donor; // middle ware
+      req.donor;
 
     if (!donorAuthId) {
       return res.status(401).json({
@@ -553,7 +562,8 @@ export const getMyDonations = async (req, res) => {
     }
 
     // Redis key for completed donations
-    const redisKey = `donor:${donorProfile._id}:completed-donations`;
+    const redisKey =
+      `donor:${donorProfile._id}:completed-donations`;
 
     // Check Redis cache
     const cachedDonations = await client.get(redisKey);
@@ -566,16 +576,22 @@ export const getMyDonations = async (req, res) => {
         data: JSON.parse(cachedDonations),
       });
     }
-    console.log("Redis empty, fetching completed donations from mongoDB");
+
+    console.log(
+      "Redis empty, fetching completed donations from mongoDB"
+    );
 
     const completedDonations = await serviceModel
       .find({
         donorId: donorProfile._id,
         status: "completed",
       })
-      // to  display the image in comple section in donor dashboar 
+      // to display the image in complete section in donor dashboard
       .populate("userId", "name email image")
-      .populate("donorId", "donorName bloodGroup contact address image")
+      .populate(
+        "donorId",
+        "donorName bloodGroup contact address image"
+      )
       .sort({ updatedAt: -1 });
 
     await client.set(redisKey, JSON.stringify(completedDonations), {
