@@ -8,7 +8,8 @@ import { client } from "../config/redis.js";
 
 export const createService = async (req, res) => {
   try {
-    const { donorId, userName, age, location, contact, description } = req.body;
+    const { donorId, userName, age, location, contact, description } =
+      req.body;
 
     // Validate required fields
     if (
@@ -78,6 +79,23 @@ export const createService = async (req, res) => {
     } catch (redisError) {
       console.error(
         "Redis cache clear error:",
+        redisError.message
+      );
+    }
+
+    // Clear donor's cached requests after creating a new request
+    // Redis error should not affect successful MongoDB creation
+    try {
+      const donorRedisPattern = `donor:${donor._id}:requests:page:*`;
+
+      const donorRedisKeys = await client.keys(donorRedisPattern);
+
+      if (donorRedisKeys.length > 0) {
+        await client.del(donorRedisKeys);
+      }
+    } catch (redisError) {
+      console.error(
+        "Donor Redis cache clear error:",
         redisError.message
       );
     }
