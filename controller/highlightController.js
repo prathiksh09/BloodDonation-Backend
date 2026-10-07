@@ -2,7 +2,10 @@ import mongoose from "mongoose";
 import highlightModel from "../model/highlightModel.js";
 import { client } from "../config/redis.js";
 
-const ACTIVE_KEY = "highlights:active";
+// Simple Redis key
+const HIGHLIGHT_KEY = "highlights";
+
+// CONVERT VALUE TO STRING
 
 const convertToString = (value) => {
   if (Array.isArray(value)) {
@@ -16,9 +19,7 @@ const convertToString = (value) => {
   return "";
 };
 
-// ==========================================================
 // ADMIN - CREATE HIGHLIGHT
-// ==========================================================
 
 export const createHighlight = async (req, res) => {
   try {
@@ -32,8 +33,10 @@ export const createHighlight = async (req, res) => {
       order,
     } = req.body;
 
-    // For adding image
+    // Image
     const image = req.file?.filename;
+
+    // VALIDATION
 
     if (!bloodGroup) {
       return res.status(400).json({
@@ -63,9 +66,7 @@ export const createHighlight = async (req, res) => {
       });
     }
 
-    // ======================================================
     // CHECK DUPLICATE BLOOD GROUP
-    // ======================================================
 
     const existingHighlight = await highlightModel.findOne({
       bloodGroup: bloodGroup.trim(),
@@ -78,9 +79,7 @@ export const createHighlight = async (req, res) => {
       });
     }
 
-    // ======================================================
     // CONVERT VALUES TO STRING
-    // ======================================================
 
     const donateToString = convertToString(donateTo);
     const receiveFromString = convertToString(receiveFrom);
@@ -99,35 +98,31 @@ export const createHighlight = async (req, res) => {
       });
     }
 
-    // ======================================================
     // CREATE HIGHLIGHT
-    // ======================================================
 
     const highlight = await highlightModel.create({
       bloodGroup: bloodGroup.trim(),
-
       description: description.trim(),
-
       healthInfo: healthInfo ? healthInfo.trim() : "",
-
       donateTo: donateToString,
-
       receiveFrom: receiveFromString,
-
       isActive: typeof isActive === "boolean" ? isActive : true,
-
       order: order !== undefined ? Number(order) : 0,
 
-      // New highlights are not deleted
+      // New highlight is not deleted
       isDeleted: false,
-
       deletedAt: null,
 
       image,
     });
 
-    // Clear Redis cache
-    await client.del(ACTIVE_KEY);
+    // CLEAR REDIS CACHE
+
+    try {
+      await client.del(HIGHLIGHT_KEY);
+    } catch (redisError) {
+      console.error("REDIS CACHE CLEAR ERROR:", redisError.message);
+    }
 
     return res.status(201).json({
       success: true,
@@ -145,40 +140,34 @@ export const createHighlight = async (req, res) => {
   }
 };
 
-// ==========================================================
 // PUBLIC - GET ACTIVE HIGHLIGHTS
-// ==========================================================
 
 export const getActiveHighlights = async (req, res) => {
   try {
-    // ======================================================
-    // CHECK REDIS CACHE
-    // ======================================================
+    // CHECK REDIS
 
-    const cachedHighlights = await client.get(ACTIVE_KEY);
+    try {
+      const cachedHighlights = await client.get(HIGHLIGHT_KEY);
 
-    if (cachedHighlights) {
-      const highlights = JSON.parse(cachedHighlights);
+      if (cachedHighlights) {
+        const highlights = JSON.parse(cachedHighlights);
 
-      return res.status(200).json({
-        success: true,
-        count: highlights.length,
-        highlights,
-        message: "Highlights found from Redis",
-      });
+        return res.status(200).json({
+          success: true,
+          count: highlights.length,
+          highlights,
+          message: "Highlights found from Redis",
+        });
+      }
+    } catch (redisError) {
+      console.error("REDIS GET ERROR:", redisError.message);
     }
 
-    // ======================================================
-    // GET ACTIVE HIGHLIGHTS FROM MONGODB
-    // ======================================================
+    // GET FROM MONGODB
 
     const highlights = await highlightModel
       .find({
         isActive: true,
-
-        // This handles both:
-        // isDeleted: false
-        // isDeleted field not existing
         isDeleted: {
           $ne: true,
         },
@@ -188,13 +177,15 @@ export const getActiveHighlights = async (req, res) => {
         createdAt: 1,
       });
 
-    await client.set(ACTIVE_KEY, JSON.stringify(highlights), {
-      EX: 60,
-    });
+    // SAVE IN REDIS
 
-    // ======================================================
-    // RESPONSE
-    // ======================================================
+    try {
+      await client.set(HIGHLIGHT_KEY, JSON.stringify(highlights), {
+        EX: 60,
+      });
+    } catch (redisError) {
+      console.error("REDIS SET ERROR:", redisError.message);
+    }
 
     return res.status(200).json({
       success: true,
@@ -213,24 +204,12 @@ export const getActiveHighlights = async (req, res) => {
   }
 };
 
-// ==========================================================
 // ADMIN - GET ALL NON-DELETED HIGHLIGHTS
-// ==========================================================
 
 export const getAllHighlights = async (req, res) => {
   try {
-    // ======================================================
-    // GET ALL HIGHLIGHTS EXCEPT BIN ITEMS
-    // ======================================================
-
     const highlights = await highlightModel
       .find({
-        // Show:
-        // isDeleted: false
-        // OR isDeleted field does not exist
-
-        // Hide:
-        // isDeleted: true
         isDeleted: {
           $ne: true,
         },
@@ -239,10 +218,6 @@ export const getAllHighlights = async (req, res) => {
         order: 1,
         createdAt: 1,
       });
-
-    // ======================================================
-    // RESPONSE
-    // ======================================================
 
     return res.status(200).json({
       success: true,
@@ -260,16 +235,10 @@ export const getAllHighlights = async (req, res) => {
   }
 };
 
-// ==========================================================
 // ADMIN - GET DELETED HIGHLIGHTS / BIN
-// ==========================================================
 
 export const getDeletedHighlights = async (req, res) => {
   try {
-    // ======================================================
-    // GET ONLY DELETED HIGHLIGHTS
-    // ======================================================
-
     const highlights = await highlightModel
       .find({
         isDeleted: true,
@@ -277,10 +246,6 @@ export const getDeletedHighlights = async (req, res) => {
       .sort({
         deletedAt: -1,
       });
-
-    // ======================================================
-    // RESPONSE
-    // ======================================================
 
     return res.status(200).json({
       success: true,
@@ -298,17 +263,11 @@ export const getDeletedHighlights = async (req, res) => {
   }
 };
 
-// ==========================================================
 // ADMIN - GET SINGLE HIGHLIGHT
-// ==========================================================
 
 export const getHighlightById = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // ======================================================
-    // CHECK ID
-    // ======================================================
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -317,22 +276,12 @@ export const getHighlightById = async (req, res) => {
       });
     }
 
-    // ======================================================
-    // FIND HIGHLIGHT
-    // ======================================================
-
     const highlight = await highlightModel.findOne({
       _id: id,
-
-      // Do not return items in Bin
       isDeleted: {
         $ne: true,
       },
     });
-
-    // ======================================================
-    // NOT FOUND
-    // ======================================================
 
     if (!highlight) {
       return res.status(404).json({
@@ -340,10 +289,6 @@ export const getHighlightById = async (req, res) => {
         message: "Highlight not found",
       });
     }
-
-    // ======================================================
-    // RESPONSE
-    // ======================================================
 
     return res.status(200).json({
       success: true,
@@ -360,9 +305,7 @@ export const getHighlightById = async (req, res) => {
   }
 };
 
-// ==========================================================
 // ADMIN - UPDATE HIGHLIGHT
-// ==========================================================
 
 export const updateHighlight = async (req, res) => {
   try {
@@ -378,6 +321,8 @@ export const updateHighlight = async (req, res) => {
       order,
     } = req.body;
 
+    // CHECK ID
+
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
         success: false,
@@ -385,14 +330,10 @@ export const updateHighlight = async (req, res) => {
       });
     }
 
-    // ======================================================
     // FIND HIGHLIGHT
-    // ======================================================
 
     const existingHighlight = await highlightModel.findOne({
       _id: id,
-
-      // Do not update items already in Bin
       isDeleted: {
         $ne: true,
       },
@@ -405,9 +346,7 @@ export const updateHighlight = async (req, res) => {
       });
     }
 
-    // ======================================================
     // BLOOD GROUP
-    // ======================================================
 
     if (bloodGroup !== undefined) {
       if (!bloodGroup.trim()) {
@@ -417,13 +356,11 @@ export const updateHighlight = async (req, res) => {
         });
       }
 
-      // ====================================================
-      // CHECK DUPLICATE BLOOD GROUP
-      // ====================================================
-
       const duplicateHighlight = await highlightModel.findOne({
         bloodGroup: bloodGroup.trim(),
-        _id: { $ne: id },
+        _id: {
+          $ne: id,
+        },
       });
 
       if (duplicateHighlight) {
@@ -436,9 +373,7 @@ export const updateHighlight = async (req, res) => {
       existingHighlight.bloodGroup = bloodGroup.trim();
     }
 
-    // ======================================================
     // DESCRIPTION
-    // ======================================================
 
     if (description !== undefined) {
       if (!description.trim()) {
@@ -451,17 +386,13 @@ export const updateHighlight = async (req, res) => {
       existingHighlight.description = description.trim();
     }
 
-    // ======================================================
-    // HEALTH / DISEASE INFORMATION
-    // ======================================================
+    // HEALTH INFO
 
     if (healthInfo !== undefined) {
       existingHighlight.healthInfo = healthInfo.trim();
     }
 
-    // ======================================================
     // DONATE TO
-    // ======================================================
 
     if (donateTo !== undefined) {
       const donateToString = convertToString(donateTo);
@@ -476,9 +407,7 @@ export const updateHighlight = async (req, res) => {
       existingHighlight.donateTo = donateToString;
     }
 
-    // ======================================================
     // RECEIVE FROM
-    // ======================================================
 
     if (receiveFrom !== undefined) {
       const receiveFromString = convertToString(receiveFrom);
@@ -493,17 +422,13 @@ export const updateHighlight = async (req, res) => {
       existingHighlight.receiveFrom = receiveFromString;
     }
 
-    // ======================================================
     // ACTIVE STATUS
-    // ======================================================
 
     if (isActive !== undefined) {
       existingHighlight.isActive = Boolean(isActive);
     }
 
-    // ======================================================
     // ORDER
-    // ======================================================
 
     if (order !== undefined) {
       const numberOrder = Number(order);
@@ -518,21 +443,22 @@ export const updateHighlight = async (req, res) => {
       existingHighlight.order = numberOrder;
     }
 
-    // ======================================================
     // IMAGE
-    // ======================================================
 
     if (req.file) {
       existingHighlight.image = req.file.filename;
     }
 
-    // ======================================================
     // SAVE
-    // ======================================================
 
     const updatedHighlight = await existingHighlight.save();
 
-    await client.del(ACTIVE_KEY);
+    // Clear Redis
+    try {
+      await client.del(HIGHLIGHT_KEY);
+    } catch (redisError) {
+      console.error("REDIS CACHE CLEAR ERROR:", redisError.message);
+    }
 
     return res.status(200).json({
       success: true,
@@ -550,17 +476,11 @@ export const updateHighlight = async (req, res) => {
   }
 };
 
-// ==========================================================
 // ADMIN - MOVE HIGHLIGHT TO BIN
-// ==========================================================
 
 export const deleteHighlight = async (req, res) => {
   try {
     const { id } = req.params;
-
-    // ======================================================
-    // CHECK ID
-    // ======================================================
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -569,14 +489,8 @@ export const deleteHighlight = async (req, res) => {
       });
     }
 
-    // ======================================================
-    // FIND HIGHLIGHT
-    // ======================================================
-
     const highlight = await highlightModel.findOne({
       _id: id,
-
-      // Allow old documents where isDeleted is missing
       isDeleted: {
         $ne: true,
       },
@@ -589,17 +503,17 @@ export const deleteHighlight = async (req, res) => {
       });
     }
 
-    // ======================================================
-    // MOVE TO BIN
-    // ======================================================
-
     highlight.isDeleted = true;
-
     highlight.deletedAt = new Date();
 
     await highlight.save();
 
-    await client.del(ACTIVE_KEY);
+    // Clear Redis
+    try {
+      await client.del(HIGHLIGHT_KEY);
+    } catch (redisError) {
+      console.error("REDIS CACHE CLEAR ERROR:", redisError.message);
+    }
 
     return res.status(200).json({
       success: true,
@@ -617,9 +531,7 @@ export const deleteHighlight = async (req, res) => {
   }
 };
 
-// ==========================================================
-// ADMIN - RESTORE HIGHLIGHT FROM BIN
-// ==========================================================
+// ADMIN - RESTORE HIGHLIGHT
 
 export const restoreHighlight = async (req, res) => {
   try {
@@ -631,10 +543,6 @@ export const restoreHighlight = async (req, res) => {
         message: "Invalid highlight ID",
       });
     }
-
-    // ======================================================
-    // FIND DELETED HIGHLIGHT
-    // ======================================================
 
     const highlight = await highlightModel.findOne({
       _id: id,
@@ -648,21 +556,17 @@ export const restoreHighlight = async (req, res) => {
       });
     }
 
-    // ======================================================
-    // RESTORE
-    // ======================================================
-
     highlight.isDeleted = false;
-
     highlight.deletedAt = null;
 
     await highlight.save();
 
-    // ======================================================
-    // CLEAR REDIS CACHE
-    // ======================================================
-
-    await client.del(ACTIVE_KEY);
+    // Clear Redis
+    try {
+      await client.del(HIGHLIGHT_KEY);
+    } catch (redisError) {
+      console.error("REDIS CACHE CLEAR ERROR:", redisError.message);
+    }
 
     return res.status(200).json({
       success: true,
@@ -680,9 +584,7 @@ export const restoreHighlight = async (req, res) => {
   }
 };
 
-// ==========================================================
 // ADMIN - PERMANENTLY DELETE HIGHLIGHT
-// ==========================================================
 
 export const permanentlyDeleteHighlight = async (req, res) => {
   try {
@@ -694,10 +596,6 @@ export const permanentlyDeleteHighlight = async (req, res) => {
         message: "Invalid highlight ID",
       });
     }
-
-    // ======================================================
-    // DELETE ONLY FROM BIN
-    // ======================================================
 
     const highlight = await highlightModel.findOneAndDelete({
       _id: id,
@@ -711,11 +609,12 @@ export const permanentlyDeleteHighlight = async (req, res) => {
       });
     }
 
-    await client.del(ACTIVE_KEY);
-
-    // ======================================================
-    // RESPONSE
-    // ======================================================
+    // Clear Redis
+    try {
+      await client.del(HIGHLIGHT_KEY);
+    } catch (redisError) {
+      console.error("REDIS CACHE CLEAR ERROR:", redisError.message);
+    }
 
     return res.status(200).json({
       success: true,
@@ -732,9 +631,7 @@ export const permanentlyDeleteHighlight = async (req, res) => {
   }
 };
 
-// ==========================================================
 // ADMIN - TOGGLE HIGHLIGHT STATUS
-// ==========================================================
 
 export const toggleHighlightStatus = async (req, res) => {
   try {
@@ -749,7 +646,6 @@ export const toggleHighlightStatus = async (req, res) => {
 
     const highlight = await highlightModel.findOne({
       _id: id,
-
       isDeleted: {
         $ne: true,
       },
@@ -766,15 +662,18 @@ export const toggleHighlightStatus = async (req, res) => {
 
     await highlight.save();
 
-    await client.del(ACTIVE_KEY);
+    // Clear Redis
+    try {
+      await client.del(HIGHLIGHT_KEY);
+    } catch (redisError) {
+      console.error("REDIS CACHE CLEAR ERROR:", redisError.message);
+    }
 
     return res.status(200).json({
       success: true,
-
       message: `Highlight ${
         highlight.isActive ? "activated" : "deactivated"
       } successfully`,
-
       highlight,
     });
   } catch (error) {
