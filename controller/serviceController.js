@@ -2,9 +2,7 @@ import mongoose from "mongoose";
 import serviceModel from "../model/serviceModel.js";
 import donorModel from "../model/donorModel.js";
 
-// ==========================================================
 // CREATE BLOOD REQUEST
-// ==========================================================
 
 export const createService = async (req, res) => {
   try {
@@ -81,9 +79,7 @@ export const createService = async (req, res) => {
   }
 };
 
-// ==========================================================
 // GET BLOOD REQUESTS FOR LOGGED-IN USER
-// ==========================================================
 
 export const getUserRequest = async (req, res) => {
   try {
@@ -142,9 +138,7 @@ export const getUserRequest = async (req, res) => {
   }
 };
 
-// ==========================================================
 // GET BLOOD REQUESTS FOR LOGGED-IN DONOR
-// ==========================================================
 
 export const getDonorRequests = async (req, res) => {
   try {
@@ -208,9 +202,7 @@ export const getDonorRequests = async (req, res) => {
   }
 };
 
-// ==========================================================
 // GET SINGLE BLOOD REQUEST
-// ==========================================================
 
 export const getrequestId = async (req, res) => {
   try {
@@ -252,9 +244,7 @@ export const getrequestId = async (req, res) => {
   }
 };
 
-// ==========================================================
 // ACCEPT / REJECT BLOOD REQUEST
-// ==========================================================
 
 export const updateServiceStatus = async (req, res) => {
   try {
@@ -354,9 +344,7 @@ export const updateServiceStatus = async (req, res) => {
   }
 };
 
-// ==========================================================
 // COMPLETE BLOOD REQUEST FROM USER SIDE
-// ==========================================================
 
 export const completeService = async (req, res) => {
   try {
@@ -433,9 +421,7 @@ export const completeService = async (req, res) => {
   }
 };
 
-// ==========================================================
 // MY DONATIONS PAGE
-// ==========================================================
 
 export const getMyDonations = async (req, res) => {
   try {
